@@ -102,7 +102,8 @@ export default {
         else if (env.URL) return await 代理URL(env.URL, url);
         else {
             const 网站图标 = env.ICO ? `<link rel="icon" href="${env.ICO}" type="image/x-icon">` : '';
-            const 网络备案 = env.BEIAN || `&copy; 2025 Check Socks5/HTTP - 基于 Cloudflare Workers 构建的高性能代理验证服务 | 安全修改版`;
+            // 已修改版权信息
+            const 网络备案 = env.BEIAN || `&copy; 2026 代理测试工具 .  ALL RIGHTS RESERVED . | 火山工作室`;
             let img = 'background: #ffffff;';
             if (env.IMG) {
                 const imgs = await 整理(env.IMG);
@@ -132,7 +133,6 @@ async function 检测HTTP代理(代理参数) {
     }
 
     try {
-        // 修改为国内安全的测速接口 members.3322.org
         const result = await checkHttpProxy('members.3322.org', 80, '/dyndns/getip');
         const match = result.match(/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
         if (!match) throw new Error("无法从响应中提取落地IP");
@@ -183,7 +183,6 @@ async function 检测SOCKS5代理(代理参数) {
     }
 
     try {
-        // 修改为国内安全的测速接口 members.3322.org
         const result = await checkSocks5Proxy('members.3322.org', 80, '/dyndns/getip');
         const match = result.match(/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
         if (!match) throw new Error("无法从响应中提取落地IP");
@@ -304,144 +303,3 @@ async function checkSocks5Proxy(hostname, port, path) {
         } catch (closeError) {
             console.log('关闭连接时出错:', closeError);
         }
-        throw error;
-    }
-}
-
-function socks5AddressParser(address) {
-    let [latter, former] = address.split("@").reverse();
-    let username, password, hostname, port;
-
-    if (former) {
-        const formers = former.split(":");
-        if (formers.length !== 2) {
-            throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
-        }
-        [username, password] = formers;
-    }
-
-    const latters = latter.split(":");
-    port = Number(latters.pop());
-    if (isNaN(port)) {
-        throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
-    }
-
-    hostname = latters.join(":");
-
-    const regex = /^\[.*\]$/;
-    if (hostname.includes(":") && !regex.test(hostname)) {
-        throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
-    }
-
-    // 安全清理：移除了可疑的 base64 替换代码
-
-    return {
-        username,
-        password,
-        hostname,
-        port,
-    }
-}
-
-/**
- * 建立 SOCKS5 代理连接
- */
-async function socks5Connect(addressType, addressRemote, portRemote) {
-    const { username, password, hostname, port } = parsedSocks5Address;
-
-    let socket;
-    try {
-        socket = connect({
-            hostname,
-            port,
-        });
-
-        const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-        const writer = socket.writable.getWriter();
-
-        await writer.write(socksGreeting);
-        console.log('已发送 SOCKS5 问候消息');
-
-        const reader = socket.readable.getReader();
-        const encoder = new TextEncoder();
-        let res = (await reader.read()).value;
-        
-        if (res[0] !== 0x05) {
-            throw new Error(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
-        }
-        if (res[1] === 0xff) {
-            throw new Error("服务器不接受任何认证方法");
-        }
-
-        if (res[1] === 0x02) {
-            console.log("SOCKS5 服务器需要认证");
-            if (!username || !password) {
-                throw new Error("请提供用户名和密码");
-            }
-            const authRequest = new Uint8Array([
-                1,
-                username.length,
-                ...encoder.encode(username),
-                password.length,
-                ...encoder.encode(password)
-            ]);
-            await writer.write(authRequest);
-            res = (await reader.read()).value;
-            if (res[0] !== 0x01 || res[1] !== 0x00) {
-                throw new Error("SOCKS5 服务器认证失败");
-            }
-        }
-
-        let DSTADDR;
-        switch (addressType) {
-            case 1:
-                DSTADDR = new Uint8Array(
-                    [1, ...addressRemote.split('.').map(Number)]
-                );
-                break;
-            case 2:
-                DSTADDR = new Uint8Array(
-                    [3, addressRemote.length, ...encoder.encode(addressRemote)]
-                );
-                break;
-            case 3:
-                DSTADDR = new Uint8Array(
-                    [4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]
-                );
-                break;
-            default:
-                throw new Error(`无效的地址类型: ${addressType}`);
-        }
-        const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-        await writer.write(socksRequest);
-        console.log('已发送 SOCKS5 请求');
-
-        res = (await reader.read()).value;
-        if (res[1] === 0x00) {
-            console.log("SOCKS5 连接已建立");
-        } else {
-            throw new Error(`SOCKS5 连接建立失败，错误代码: ${res[1]}`);
-        }
-
-        writer.releaseLock();
-        reader.releaseLock();
-
-        return socket;
-    } catch (error) {
-        if (socket) {
-            try {
-                await socket.close();
-            } catch (closeError) {
-                console.log('关闭失败的连接时出错:', closeError);
-            }
-        }
-        throw error;
-    }
-}
-
-/**
- * 获取IP信息的通用函数
- */
-async function getIpInfo(ip) {
-    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:
